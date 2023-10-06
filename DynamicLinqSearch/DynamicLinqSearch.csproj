@@ -4,6 +4,15 @@
     <TargetFramework>net6.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>Dynamic Linq and Search Helper</Title>
+    <Authors>Caner Demirkaya</Authors>
+    <Description>It helps to create LINQ query dynamically with a json query model.</Description>
+    <Copyright>2023</Copyright>
+    <PackageProjectUrl>https://github.com/canerdk/Nuget.DynamicLinqSearch</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/canerdk/Nuget.DynamicLinqSearch</RepositoryUrl>
+    <PackageTags>LINQ dynamic search query expression</PackageTags>
+    <PackageReleaseNotes>Created dynamic linq and string column search methods.</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>
