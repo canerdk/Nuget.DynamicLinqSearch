@@ -37,6 +37,8 @@ namespace DynamicLinqSearch
         {
             ParameterExpression parameterExpression = Expression.Parameter(typeof(TEntity));
             MethodInfo containsMethod = typeof(string).GetMethod("Contains", new[] { typeof(string) });
+            MethodInfo toUpperMethod = typeof(string).GetMethod("ToUpper", new Type[] { });
+
             Expression filter = null;
 
             foreach (var propertyInfo in typeof(TEntity).GetProperties())
@@ -45,8 +47,11 @@ namespace DynamicLinqSearch
 
                 if (property.Type == typeof(string))
                 {
-                    ConstantExpression constant = Expression.Constant(searchValue, typeof(string));
-                    Expression containsExpression = Expression.Call(property, containsMethod, constant);
+                    ConstantExpression constant = Expression.Constant(searchValue.ToUpper(), typeof(string));
+
+                    Expression toUpperExpression = Expression.Call(property, toUpperMethod);
+
+                    Expression containsExpression = Expression.Call(toUpperExpression, containsMethod, Expression.Call(constant, toUpperMethod));
 
                     filter = filter != null
                         ? Expression.OrElse(filter, containsExpression)
