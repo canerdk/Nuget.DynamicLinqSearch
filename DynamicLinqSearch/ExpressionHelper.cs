@@ -38,6 +38,8 @@ namespace DynamicLinqSearch
             ParameterExpression parameterExpression = Expression.Parameter(typeof(TEntity));
             MethodInfo containsMethod = typeof(string).GetMethod("Contains", new[] { typeof(string) });
             MethodInfo toUpperMethod = typeof(string).GetMethod("ToUpper", new Type[] { });
+            Type expressionHelper = typeof(ExpressionHelper);
+            MethodInfo turkishCharacterFix = expressionHelper.GetMethod("ConvertTurkishCharactersToEnglish", BindingFlags.Static | BindingFlags.NonPublic);
 
             Expression filter = null;
 
@@ -51,7 +53,9 @@ namespace DynamicLinqSearch
 
                     Expression toUpperExpression = Expression.Call(property, toUpperMethod);
 
-                    Expression containsExpression = Expression.Call(toUpperExpression, containsMethod, Expression.Call(constant, toUpperMethod));
+                    Expression turkishFixExpression = Expression.Call(null, turkishCharacterFix, toUpperExpression);
+
+                    Expression containsExpression = Expression.Call(turkishFixExpression, containsMethod, Expression.Call(constant, toUpperMethod));
 
                     filter = filter != null
                         ? Expression.OrElse(filter, containsExpression)
@@ -111,5 +115,29 @@ namespace DynamicLinqSearch
                     throw new ArgumentException("Invalid rule relation.");
             }
         }
+
+        private static string ConvertTurkishCharactersToEnglish(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return input;
+            }
+
+            input = input.Replace("ı", "i");
+            input = input.Replace("ğ", "g");
+            input = input.Replace("ü", "u");
+            input = input.Replace("ş", "s");
+            input = input.Replace("ö", "o");
+            input = input.Replace("ç", "c");
+            input = input.Replace("İ", "I");
+            input = input.Replace("Ğ", "G");
+            input = input.Replace("Ü", "U");
+            input = input.Replace("Ş", "S");
+            input = input.Replace("Ö", "O");
+            input = input.Replace("Ç", "C");
+
+            return input;
+        }
     }
+
 }
