@@ -1,17 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace DynamicLinqSearch
+﻿namespace DynamicLinqSearch
 {
     public class FilterQuery
     {
         public string Column { get; set; }
         public string Condition { get; set; }
         public RuleRelation Relation { get; set; }
-        public string Statement { get; set; }
+        public Statement Statement { get; set; }
     }
 
     public enum RuleRelation
@@ -24,5 +18,11 @@ namespace DynamicLinqSearch
         NotContains = 6,
         StartsWith = 7,
         EndsWith = 8
+    }
+
+    public enum Statement
+    {
+        And = 1,
+        Or = 2
     }
 }

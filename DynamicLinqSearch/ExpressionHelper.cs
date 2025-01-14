@@ -5,138 +5,103 @@ namespace DynamicLinqSearch
 {
     public static class ExpressionHelper
     {
+        private static readonly MethodInfo ContainsMethod = typeof(string).GetMethod("Contains", new[] { typeof(string) });
+        private static readonly MethodInfo StartsWithMethod = typeof(string).GetMethod("StartsWith", new[] { typeof(string) });
+        private static readonly MethodInfo EndsWithMethod = typeof(string).GetMethod("EndsWith", new[] { typeof(string) });
+
         public static Expression<Func<TEntity, bool>> BuildDynamicFilter<TEntity>(List<FilterQuery> rules)
         {
-            ParameterExpression parameterExpression = Expression.Parameter(typeof(TEntity));
-            Expression filter = null;
+            if (rules == null || rules.Count == 0)
+                throw new ArgumentException("Rules cannot be null or empty.");
+
+            ParameterExpression parameter = Expression.Parameter(typeof(TEntity), "x");
+            Expression filterExpression = null;
 
             foreach (var rule in rules)
             {
-                Expression property = GetPropertyExpression(parameterExpression, rule.Column);
+                var property = GetPropertyExpression(parameter, rule.Column);
+                var constant = GetConstantExpression(property.Type, rule.Condition);
 
-                Type propertyType = property.Type;
-                Type underlyingType = Nullable.GetUnderlyingType(propertyType);
+                var binaryExpression = BuildBinaryExpression(rule.Relation, property, constant);
 
-                object convertedValue = Convert.ChangeType(rule.Condition, underlyingType ?? propertyType);
-                ConstantExpression constant = Expression.Constant(convertedValue, property.Type);
-                Expression binaryExpression = BuildBinaryExpression(rule.Relation, property, constant);
-
-                if (rule.Statement == "And")
-                    filter = filter != null ? Expression.AndAlso(filter, binaryExpression) : binaryExpression;
-                else if (rule.Statement == "Or")
-                    filter = filter != null ? Expression.OrElse(filter, binaryExpression) : binaryExpression;
-                else
-                    throw new ArgumentException("Invalid statement type, only 'And' and 'Or'");
+                filterExpression = filterExpression == null
+                    ? binaryExpression
+                    : CombineExpressions(filterExpression, binaryExpression, rule.Statement);
             }
 
-            Expression<Func<TEntity, bool>> lambda = Expression.Lambda<Func<TEntity, bool>>(filter, parameterExpression);
-            return lambda;
+            return Expression.Lambda<Func<TEntity, bool>>(filterExpression, parameter);
         }
 
         public static Expression<Func<TEntity, bool>> BuildDynamicSearch<TEntity>(string searchValue)
         {
-            ParameterExpression parameterExpression = Expression.Parameter(typeof(TEntity));
-            MethodInfo containsMethod = typeof(string).GetMethod("Contains", new[] { typeof(string) });
-            MethodInfo toUpperMethod = typeof(string).GetMethod("ToUpper", new Type[] { });
-            Type expressionHelper = typeof(ExpressionHelper);
-            MethodInfo turkishCharacterFix = expressionHelper.GetMethod("ConvertTurkishCharactersToEnglish", BindingFlags.Static | BindingFlags.NonPublic);
+            if (string.IsNullOrWhiteSpace(searchValue))
+                throw new ArgumentException("Search value cannot be null or empty.");
 
-            Expression filter = null;
+            ParameterExpression parameter = Expression.Parameter(typeof(TEntity), "x");
+            Expression searchExpression = null;
 
             foreach (var propertyInfo in typeof(TEntity).GetProperties())
             {
-                Expression property = Expression.Property(parameterExpression, propertyInfo);
-
-                if (property.Type == typeof(string))
+                if (propertyInfo.PropertyType == typeof(string))
                 {
-                    ConstantExpression constant = Expression.Constant(searchValue.ToUpper(), typeof(string));
+                    var property = Expression.Property(parameter, propertyInfo);
+                    var constant = Expression.Constant(searchValue, typeof(string));
+                    var containsExpression = Expression.Call(property, ContainsMethod, constant);
 
-                    Expression toUpperExpression = Expression.Call(property, toUpperMethod);
-
-                    Expression turkishFixExpression = Expression.Call(null, turkishCharacterFix, toUpperExpression);
-
-                    Expression containsExpression = Expression.Call(turkishFixExpression, containsMethod, Expression.Call(constant, toUpperMethod));
-
-                    filter = filter != null
-                        ? Expression.OrElse(filter, containsExpression)
-                        : containsExpression;
+                    searchExpression = searchExpression == null
+                        ? containsExpression
+                        : Expression.OrElse(searchExpression, containsExpression);
                 }
             }
 
-            Expression<Func<TEntity, bool>> lambda = Expression.Lambda<Func<TEntity, bool>>(filter, parameterExpression);
-            return lambda;
+            return searchExpression == null
+                ? x => false
+                : Expression.Lambda<Func<TEntity, bool>>(searchExpression, parameter);
         }
 
-        private static Expression GetPropertyExpression(Expression parameterExpression, string column)
+        private static Expression GetPropertyExpression(Expression parameter, string column)
         {
-            if (column.Contains("."))
-            {
-                string[] columnParts = column.Split('.');
-                Expression property = parameterExpression;
+            if (string.IsNullOrWhiteSpace(column))
+                throw new ArgumentException("Column name cannot be null or empty.");
 
-                foreach (var part in columnParts)
-                {
-                    property = Expression.PropertyOrField(property, part);
-                }
-
-                return property;
-            }
-            else
-            {
-                return Expression.PropertyOrField(parameterExpression, column);
-            }
+            return column.Split('.').Aggregate(parameter, Expression.PropertyOrField);
         }
 
-        private static Expression BuildBinaryExpression(RuleRelation relation, Expression property, ConstantExpression constant)
+        private static ConstantExpression GetConstantExpression(Type propertyType, string value)
         {
-            MethodInfo containsMethod = typeof(string).GetMethod("Contains", new[] { typeof(string) });
-            MethodInfo startsWithMethod = typeof(string).GetMethod("StartsWith", new[] { typeof(string) });
-            MethodInfo endsWithMethod = typeof(string).GetMethod("EndsWith", new[] { typeof(string) });
+            if (propertyType == null)
+                throw new ArgumentException("Property type cannot be null.");
 
-            switch (relation)
-            {
-                case RuleRelation.GreaterThan:
-                    return Expression.GreaterThanOrEqual(property, constant);
-                case RuleRelation.LessThan:
-                    return Expression.LessThanOrEqual(property, constant);
-                case RuleRelation.Equal:
-                    return Expression.Equal(property, constant);
-                case RuleRelation.NotEqual:
-                    return Expression.NotEqual(property, constant);
-                case RuleRelation.Contains:
-                    return Expression.Call(property, containsMethod, constant);
-                case RuleRelation.NotContains:
-                    return Expression.Not(Expression.Call(property, containsMethod, constant));
-                case RuleRelation.StartsWith:
-                    return Expression.Call(property, startsWithMethod, constant);
-                case RuleRelation.EndsWith:
-                    return Expression.Call(property, endsWithMethod, constant);
-                default:
-                    throw new ArgumentException("Invalid rule relation.");
-            }
+            var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+            var convertedValue = Convert.ChangeType(value, underlyingType);
+
+            return Expression.Constant(convertedValue, propertyType);
         }
 
-        private static string ConvertTurkishCharactersToEnglish(string input)
+        private static Expression BuildBinaryExpression(RuleRelation relation, Expression property, Expression constant)
         {
-            if (string.IsNullOrEmpty(input))
+            return relation switch
             {
-                return input;
-            }
+                RuleRelation.GreaterThan => Expression.GreaterThan(property, constant),
+                RuleRelation.LessThan => Expression.LessThan(property, constant),
+                RuleRelation.Equal => Expression.Equal(property, constant),
+                RuleRelation.NotEqual => Expression.NotEqual(property, constant),
+                RuleRelation.Contains => Expression.Call(property, ContainsMethod, constant),
+                RuleRelation.NotContains => Expression.Not(Expression.Call(property, ContainsMethod, constant)),
+                RuleRelation.StartsWith => Expression.Call(property, StartsWithMethod, constant),
+                RuleRelation.EndsWith => Expression.Call(property, EndsWithMethod, constant),
+                _ => throw new NotSupportedException($"Unsupported relation: {relation}.")
+            };
+        }
 
-            input = input.Replace("ı", "i");
-            input = input.Replace("ğ", "g");
-            input = input.Replace("ü", "u");
-            input = input.Replace("ş", "s");
-            input = input.Replace("ö", "o");
-            input = input.Replace("ç", "c");
-            input = input.Replace("İ", "I");
-            input = input.Replace("Ğ", "G");
-            input = input.Replace("Ü", "U");
-            input = input.Replace("Ş", "S");
-            input = input.Replace("Ö", "O");
-            input = input.Replace("Ç", "C");
-
-            return input;
+        private static Expression CombineExpressions(Expression left, Expression right, Statement statement)
+        {
+            return statement switch
+            {
+                Statement.And => Expression.AndAlso(left, right),
+                Statement.Or => Expression.OrElse(left, right),
+                _ => throw new ArgumentException($"Unsupported statement type: {statement}.")
+            };
         }
     }
 
